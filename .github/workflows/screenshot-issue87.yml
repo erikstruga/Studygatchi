@@ -1,0 +1,71 @@
+name: Capture Issue 87 UI
+
+on:
+  push:
+    branches:
+      - issue-87-screenshot
+
+jobs:
+  screenshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm install
+
+      - name: Install Playwright
+        working-directory: frontend
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Start app
+        working-directory: frontend
+        run: |
+          npm run dev -- --host 127.0.0.1 > /tmp/studygatchi-vite.log 2>&1 &
+          for i in {1..60}; do
+            if curl -sf http://127.0.0.1:5173/todo > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/studygatchi-vite.log
+          exit 1
+
+      - name: Capture edited task UI
+        working-directory: frontend
+        run: |
+          node --input-type=module <<'EOF'
+          import { chromium } from 'playwright';
+
+          const browser = await chromium.launch({ headless: true });
+          const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+
+          await page.goto('http://127.0.0.1:5173/todo', { waitUntil: 'networkidle' });
+
+          const editButtons = page.getByRole('button', { name: 'Edit' });
+          await editButtons.nth(1).click();
+
+          const editInput = page.getByLabel('Edit Read Chapters 2-3');
+          await editInput.fill('Read Chapters 2-4');
+
+          const heading = page.getByRole('heading', { name: 'Goober To Do List' });
+          const todoRoot = heading.locator('xpath=../..');
+          await todoRoot.screenshot({ path: 'studygatchi-issue87-running.png' });
+
+          await browser.close();
+          EOF
+
+      - name: Upload screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: studygatchi-issue87-running
+          path: frontend/studygatchi-issue87-running.png
